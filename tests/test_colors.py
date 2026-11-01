@@ -5,7 +5,13 @@ from __future__ import annotations
 import pytest
 from PIL import Image
 
-from reelcard.colors import make_barcode, representative_color
+from reelcard.colors import (
+    make_barcode,
+    make_palette,
+    render_palette,
+    render_palette_svg,
+    representative_color,
+)
 from reelcard.errors import FrameExtractionError
 from reelcard.video import VideoFrame
 
@@ -160,3 +166,75 @@ def test_make_barcode_vivid_style_increases_saturation() -> None:
 def test_make_barcode_rejects_unknown_color_style() -> None:
     with pytest.raises(ValueError, match="color_style"):
         make_barcode([_frame((1, 2, 3))], color_style="unknown")
+
+
+def test_make_palette_finds_distinct_prominent_colors_and_ignores_black() -> None:
+    colors = [(220, 20, 20)] * 8 + [(20, 30, 220)] * 5 + [(220, 210, 20)] * 2 + [(0, 0, 0)]
+    frame = VideoFrame(
+        1.0,
+        4,
+        4,
+        bytes(channel for color in colors for channel in color),
+    )
+
+    palette = make_palette([frame])
+
+    assert len(palette) == 3
+    assert palette[0] == pytest.approx((220, 20, 20), abs=3)
+    assert any(color == pytest.approx((20, 30, 220), abs=3) for color in palette)
+    assert any(color == pytest.approx((220, 210, 20), abs=3) for color in palette)
+    assert all(max(color) > 24 for color in palette)
+
+
+def test_make_palette_can_include_black_and_returns_up_to_six_colors() -> None:
+    colors = [(220, 20, 20)] * 8 + [(20, 30, 220)] * 5 + [(0, 0, 0)] * 3
+    frame = VideoFrame(
+        1.0,
+        4,
+        4,
+        bytes(channel for color in colors for channel in color),
+    )
+
+    palette = make_palette([frame], include_black=True)
+
+    assert len(palette) == 3
+    assert palette[0] == pytest.approx((220, 20, 20), abs=3)
+    assert (0, 0, 0) in palette
+
+
+def test_make_palette_requires_black_option_for_all_dark_samples() -> None:
+    with pytest.raises(ValueError, match="--include-black"):
+        make_palette([_frame((0, 0, 0))])
+
+
+def test_render_palette_creates_equal_width_horizontal_swatches() -> None:
+    image = render_palette(
+        [(255, 0, 0), (0, 255, 0), (0, 0, 255)],
+        width=9,
+        height=4,
+    )
+
+    assert image.size == (9, 4)
+    assert image.getpixel((0, 0)) == (255, 0, 0)
+    assert image.getpixel((3, 0)) == (0, 255, 0)
+    assert image.getpixel((6, 0)) == (0, 0, 255)
+
+
+def test_render_palette_svg_uses_vector_rectangles() -> None:
+    import xml.etree.ElementTree as ET
+
+    svg = render_palette_svg(
+        [(255, 0, 0), (0, 255, 0), (0, 0, 255)],
+        width=9,
+        height=4,
+    )
+    root = ET.fromstring(svg)
+    namespace = {"svg": "http://www.w3.org/2000/svg"}
+    rectangles = root.findall("./svg:rect", namespace)
+
+    assert len(rectangles) == 3
+    assert [rect.attrib["fill"] for rect in rectangles] == [
+        "#ff0000",
+        "#00ff00",
+        "#0000ff",
+    ]

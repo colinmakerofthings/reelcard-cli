@@ -59,6 +59,7 @@ def test_lookup_movie_fetches_details_by_imdb_id() -> None:
     assert isinstance(request, Request)
     query = parse_qs(urlparse(request.full_url).query)
     assert query["i"] == ["tt0000001"]
+    assert query["plot"] == ["full"]
     assert query["apikey"] == ["test-key"]
 
 

@@ -10,7 +10,12 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from reelcard.colors import ColorStyle, make_barcode
+from reelcard.colors import (
+    ColorStyle,
+    make_barcode,
+    make_palette,
+    render_palette,
+)
 from reelcard.errors import ReelcardError
 from reelcard.metadata import MetadataLookupError, MovieMetadata, lookup_movie
 from reelcard.poster import (
@@ -46,6 +51,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--series",
         type=Path,
         help="JSON manifest describing multiple movies and their poster metadata",
+    )
+    parser.add_argument(
+        "--palette",
+        action="store_true",
+        help="show a film's palette in the poster's barcode area",
+    )
+    parser.add_argument(
+        "--include-black",
+        action="store_true",
+        help="include near-black colors when generating a palette",
     )
     parser.add_argument("--title", help="film title (defaults to the input filename)")
     parser.add_argument("--year", type=_parse_year, help="film release year")
@@ -124,13 +139,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         title = args.series.stem
     else:
         title = ""
-    output_path = args.output or Path.cwd() / f"{_safe_filename(title)}.{args.format}"
+    output_name = _safe_filename(title)
+    if args.palette:
+        output_name += "-palette"
+    output_path = args.output or Path.cwd() / f"{output_name}.{args.format}"
 
     try:
         if (input_path is None) == (args.series is None):
             raise ValueError("provide one video path or use --series with a manifest")
         if not title.strip():
             raise ValueError("title must not be empty")
+        if args.palette and args.series is not None:
+            raise ValueError("--palette cannot be combined with --series")
+        if args.include_black and not args.palette:
+            raise ValueError("--include-black requires --palette")
         width, height = _resolve_dimensions(args.width, args.height)
         _validate_dpi(args.dpi)
         _validate_stripes(args.stripes)
@@ -195,11 +217,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"Analyzing {input_path}...", file=sys.stderr)
         metadata = probe_video(input_path)
         print(f"Sampling {args.stripes} frames...", file=sys.stderr)
-        barcode = make_barcode(
-            iter_video_frames(input_path, args.stripes, metadata=metadata),
-            color_style=args.color_style,
-        )
-        render_options = {
+        palette_colors: list[tuple[int, int, int]] | None = None
+        if args.palette:
+            palette_colors = make_palette(
+                iter_video_frames(input_path, args.stripes, metadata=metadata),
+                include_black=args.include_black,
+            )
+            barcode = render_palette(
+                palette_colors,
+                width=len(palette_colors),
+                height=64,
+            )
+        else:
+            barcode = make_barcode(
+                iter_video_frames(input_path, args.stripes, metadata=metadata),
+                color_style=args.color_style,
+            )
+        render_options: dict[str, object] = {
             "title": title,
             "runtime_seconds": metadata.duration,
             "year": args.year or (movie_metadata.year if movie_metadata else None),
@@ -219,6 +253,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             "height": height,
             "dpi": args.dpi,
         }
+        if palette_colors is not None:
+            render_options["palette_colors"] = palette_colors
         if args.format == "svg":
             svg = render_svg(barcode, **render_options)
             save_svg(svg, output_path, overwrite=args.force)
@@ -234,7 +270,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"reelcard: error: {exc}", file=sys.stderr)
         return 2
 
-    print(f"Saved poster to {output_path}")
+    output_kind = "palette poster" if args.palette else "poster"
+    print(f"Saved {output_kind} to {output_path}")
     return 0
 
 
