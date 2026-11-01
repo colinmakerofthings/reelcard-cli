@@ -27,7 +27,7 @@ def _barcode() -> Image.Image:
     return Image.new("RGB", (4, 2), "red")
 
 
-def test_render_poster_has_default_postcard_dimensions_and_paper_background() -> None:
+def test_render_poster_has_default_postcard_dimensions_and_white_background() -> None:
     poster = render_poster(
         _barcode(),
         title="My Film",
@@ -37,8 +37,23 @@ def test_render_poster_has_default_postcard_dimensions_and_paper_background() ->
     assert poster.size == (DEFAULT_WIDTH, DEFAULT_HEIGHT)
     assert DEFAULT_WIDTH > DEFAULT_HEIGHT
     assert poster.mode == "RGB"
+    assert poster.getpixel((0, 0)) == (255, 255, 255)
+    assert poster.getpixel((round(DEFAULT_WIDTH * 0.035), round(DEFAULT_HEIGHT * 0.065))) == (
+        255,
+        255,
+        255,
+    )
+
+
+def test_render_poster_retains_paper_background_option() -> None:
+    poster = render_poster(
+        _barcode(),
+        title="My Film",
+        runtime_seconds=5_520,
+        background_color=PAPER,
+    )
+
     assert poster.getpixel((0, 0)) == PAPER
-    assert poster.getpixel((round(DEFAULT_WIDTH * 0.035), round(DEFAULT_HEIGHT * 0.065))) == PAPER
 
 
 def test_render_poster_scales_to_custom_landscape_dimensions() -> None:
@@ -51,6 +66,28 @@ def test_render_poster_scales_to_custom_landscape_dimensions() -> None:
     )
 
     assert poster.size == (874, 620)
+
+
+def test_render_poster_supports_custom_background_color() -> None:
+    poster = render_poster(
+        _barcode(),
+        title="My Film",
+        runtime_seconds=5_520,
+        background_color=(255, 255, 255),
+    )
+
+    assert poster.getpixel((0, 0)) == (255, 255, 255)
+
+
+def test_render_svg_supports_custom_background_color() -> None:
+    svg = render_svg(
+        _barcode(),
+        title="My Film",
+        runtime_seconds=5_520,
+        background_color=(255, 255, 255),
+    )
+
+    assert '<rect width="1748" height="1240" fill="#ffffff"/>' in svg
 
 
 def test_default_postcard_dimensions_are_landscape() -> None:
@@ -453,6 +490,7 @@ def test_render_poster_wraps_long_titles_and_normalizes_whitespace() -> None:
         ({"width": 200, "height": 300}, "dimensions"),
         ({"dpi": 0}, "dpi"),
         ({"dpi": float("nan")}, "dpi"),
+        ({"background_color": (256, 255, 255)}, "background_color"),
     ],
 )
 def test_render_poster_rejects_invalid_options(

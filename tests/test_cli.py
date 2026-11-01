@@ -11,9 +11,9 @@ from unittest.mock import patch
 import pytest
 from PIL import Image
 
-from reelcard.cli import main
+from reelcard.cli import build_parser, main
 from reelcard.metadata import MetadataLookupError, MovieMetadata
-from reelcard.poster import DEFAULT_HEIGHT, DEFAULT_WIDTH
+from reelcard.poster import DEFAULT_HEIGHT, DEFAULT_WIDTH, PAPER, WHITE
 from reelcard.video import VideoMetadata
 
 
@@ -38,6 +38,7 @@ def test_cli_help_lists_supported_options(capsys: pytest.CaptureFixture[str]) ->
         "--plot",
         "--subtitle",
         "--credits",
+        "--background-color",
         "--imdb-id",
         "--output",
         "--format",
@@ -70,6 +71,30 @@ def test_cli_rejects_invalid_argument_values(
 
     assert exit_info.value.code == 2
     assert message in capsys.readouterr().err
+
+
+def test_cli_rejects_invalid_background_color(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as exit_info:
+        main(["movie.mp4", "--background-color", "ultraviolet"])
+
+    assert exit_info.value.code == 2
+    assert "paper', 'white', or a six-digit hex color" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(("value", "expected"), [("paper", PAPER), ("white", WHITE)])
+def test_cli_parses_background_color_presets(
+    value: str,
+    expected: tuple[int, int, int],
+) -> None:
+    args = build_parser().parse_args(["movie.mp4", "--background-color", value])
+
+    assert args.background_color == expected
+
+
+def test_cli_defaults_to_white_background() -> None:
+    args = build_parser().parse_args(["movie.mp4"])
+
+    assert args.background_color == WHITE
 
 
 def test_cli_requires_both_custom_dimensions_before_processing(
@@ -191,6 +216,8 @@ def test_cli_runs_pipeline_with_metadata_and_custom_options(
                 "620",
                 "--dpi",
                 "150",
+                "--background-color",
+                "#e8dfc8",
                 "--force",
             ]
         )
@@ -214,6 +241,7 @@ def test_cli_runs_pipeline_with_metadata_and_custom_options(
         plot="A plot summary",
         subtitle="Subtitle",
         credits="Credits",
+        background_color=(232, 223, 200),
         width=874,
         height=620,
         dpi=150.0,
@@ -418,9 +446,11 @@ def test_cli_renders_series_oldest_first_as_one_stacked_image(
     monkeypatch.chdir(tmp_path)
     metadata = VideoMetadata(60.0, 640, 480, 0)
     rendered: list[str] = []
+    backgrounds: list[tuple[int, int, int]] = []
 
     def render_panel(_barcode, *, title, **kwargs):
         rendered.append(title)
+        backgrounds.append(kwargs["background_color"])
         color = "blue" if title == "Newer" else "red"
         return Image.new("RGB", (kwargs["width"], kwargs["height"]), color)
 
@@ -439,12 +469,15 @@ def test_cli_renders_series_oldest_first_as_one_stacked_image(
                 "620",
                 "--height",
                 "400",
+                "--background-color",
+                "white",
             ]
         )
 
     assert result == 0
     assert [call.args[0] for call in probe.call_args_list] == [older, newer]
     assert rendered == ["Older", "Newer"]
+    assert backgrounds == [WHITE, WHITE]
     combined = save.call_args.args[0]
     assert combined.size == (620, 800)
     assert combined.getpixel((0, 0)) == (255, 0, 0)
