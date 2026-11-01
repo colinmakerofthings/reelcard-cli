@@ -22,6 +22,8 @@ from reelcard.poster import (
     DEFAULT_DPI,
     DEFAULT_HEIGHT,
     DEFAULT_WIDTH,
+    PAPER,
+    WHITE,
     render_poster,
     render_svg,
     save_poster,
@@ -77,6 +79,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--plot", help="short plot summary for the poster footer")
     parser.add_argument("--subtitle", help="short descriptor below the barcode")
     parser.add_argument("--credits", help="optional footer credits")
+    parser.add_argument(
+        "--background-color",
+        type=_parse_background_color,
+        default=WHITE,
+        metavar="COLOR",
+        help="poster background: white (default), paper, or a hex color such as #e8dfc8",
+    )
     parser.add_argument(
         "--imdb-id",
         help="look up missing metadata for this IMDb ID via OMDb",
@@ -179,6 +188,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 width=width,
                 height=height,
                 dpi=args.dpi,
+                background_color=args.background_color,
                 overwrite=args.force,
             )
 
@@ -249,6 +259,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "plot": args.plot or (movie_metadata.plot if movie_metadata else None),
             "subtitle": args.subtitle,
             "credits": args.credits,
+            "background_color": args.background_color,
             "width": width,
             "height": height,
             "dpi": args.dpi,
@@ -317,6 +328,7 @@ def _generate_series(
     width: int,
     height: int,
     dpi: float,
+    background_color: tuple[int, int, int],
     overwrite: bool,
 ) -> int:
     resolved_movies: list[tuple[int, SeriesMovie, MovieMetadata | None, str]] = []
@@ -381,6 +393,7 @@ def _generate_series(
             "plot": movie.plot or (movie_metadata.plot if movie_metadata else None),
             "subtitle": movie.subtitle,
             "credits": movie.credits,
+            "background_color": background_color,
             "width": width,
             "height": height,
             "dpi": dpi,
@@ -411,6 +424,24 @@ def _parse_runtime(value: str) -> str:
     if not runtime:
         raise argparse.ArgumentTypeError("runtime must not be empty")
     return runtime
+
+
+def _parse_background_color(value: str) -> tuple[int, int, int]:
+    normalized = value.casefold()
+    if normalized == "paper":
+        return PAPER
+    if normalized == "white":
+        return WHITE
+    hex_value = value.removeprefix("#")
+    if re.fullmatch(r"[0-9a-fA-F]{6}", hex_value):
+        return (
+            int(hex_value[0:2], 16),
+            int(hex_value[2:4], 16),
+            int(hex_value[4:6], 16),
+        )
+    raise argparse.ArgumentTypeError(
+        "background color must be 'paper', 'white', or a six-digit hex color"
+    )
 
 
 def _positive_int(value: str) -> int:

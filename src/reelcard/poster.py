@@ -14,6 +14,7 @@ DEFAULT_WIDTH = 1748
 DEFAULT_HEIGHT = 1240
 DEFAULT_DPI = 300
 PAPER = (243, 242, 236)
+WHITE = (255, 255, 255)
 INK = (22, 23, 22)
 PLACEHOLDER = "NOT PROVIDED"
 _FONT_PATH = Path(__file__).parent / "fonts" / "Montserrat.ttf"
@@ -59,6 +60,7 @@ def render_poster(
     plot: str | None = None,
     subtitle: str | None = None,
     credits: str | None = None,
+    background_color: tuple[int, int, int] = WHITE,
     width: int = DEFAULT_WIDTH,
     height: int = DEFAULT_HEIGHT,
     dpi: float = DEFAULT_DPI,
@@ -66,6 +68,7 @@ def render_poster(
     """Render a minimal landscape postcard poster from a color barcode."""
     _validate_dimensions(width, height)
     _validate_dpi(dpi)
+    _validate_background_color(background_color)
     if not isinstance(barcode, Image.Image) or barcode.width <= 0 or barcode.height <= 0:
         raise ValueError("barcode must be a non-empty Pillow image")
     if barcode.width > 10_000:
@@ -88,7 +91,7 @@ def render_poster(
     subtitle_text = _normalize_optional_text(subtitle)
     credits_text = _normalize_optional_text(credits)
 
-    poster = Image.new("RGB", (width, height), PAPER)
+    poster = Image.new("RGB", (width, height), background_color)
     draw = ImageDraw.Draw(poster)
     content_left = round(width * 0.045)
     content_right = round(width * 0.955)
@@ -268,6 +271,7 @@ def render_svg(
     plot: str | None = None,
     subtitle: str | None = None,
     credits: str | None = None,
+    background_color: tuple[int, int, int] = WHITE,
     width: int = DEFAULT_WIDTH,
     height: int = DEFAULT_HEIGHT,
     dpi: float = DEFAULT_DPI,
@@ -275,6 +279,7 @@ def render_svg(
     """Render the poster as self-contained SVG with an embedded font."""
     _validate_dimensions(width, height)
     _validate_dpi(dpi)
+    _validate_background_color(background_color)
     if not isinstance(barcode, Image.Image) or barcode.width <= 0 or barcode.height <= 0:
         raise ValueError("barcode must be a non-empty Pillow image")
     if barcode.width > 10_000:
@@ -299,7 +304,8 @@ def render_svg(
     credits_text = _normalize_optional_text(credits)
 
     elements: list[str] = [
-        f'<rect width="{width}" height="{height}" fill="{_svg_color(PAPER)}"/>'
+        f'<rect width="{width}" height="{height}" '
+        f'fill="{_svg_color(background_color)}"/>'
     ]
     content_left = round(width * 0.045)
     content_right = round(width * 0.955)
@@ -535,7 +541,7 @@ def stack_posters(posters: list[Image.Image]) -> Image.Image:
         poster.size != (width, panel_height) for poster in posters
     ):
         raise ValueError("poster panels must have matching non-empty dimensions")
-    combined = Image.new("RGB", (width, panel_height * len(posters)), PAPER)
+    combined = Image.new("RGB", (width, panel_height * len(posters)), WHITE)
     for index, poster in enumerate(posters):
         combined.paste(poster.convert("RGB"), (0, panel_height * index))
     return combined
@@ -582,6 +588,17 @@ def stack_svg_documents(
 
 def _svg_color(color: tuple[int, int, int]) -> str:
     return f"#{color[0]:02x}{color[1]:02x}{color[2]:02x}"
+
+
+def _validate_background_color(color: tuple[int, int, int]) -> None:
+    if (
+        not isinstance(color, tuple)
+        or len(color) != 3
+        or any(type(channel) is not int or not 0 <= channel <= 255 for channel in color)
+    ):
+        raise ValueError(
+            "background_color must be an RGB tuple with channels from 0 to 255"
+        )
 
 
 def _validate_palette_colors(

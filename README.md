@@ -75,6 +75,8 @@ reelcard "My Film.mp4" --color-style brighter --force
 reelcard "My Film.mp4" --color-style vivid --force
 reelcard "My Film.mp4" --imdb-id tt0087182
 reelcard "My Film.mp4" --palette
+reelcard "My Film.mp4" --background-color white
+reelcard "My Film.mp4" --background-color "#e8dfc8"
 reelcard --series "my-series.json" --output "my-series.png"
 ```
 
@@ -97,6 +99,7 @@ Run `reelcard --help` for all options:
 | `--plot TEXT` | Plot summary shown in the footer. |
 | `--subtitle TEXT` | Optional subtitle below the barcode. |
 | `--credits TEXT` | Optional footer credits. |
+| `--background-color COLOR` | Poster background: `white` (default), `paper`, or a six-digit hex color. |
 | `--imdb-id ID` | Look up missing metadata for this movie via OMDb; requires an API key. |
 | `--series PATH` | Create one stacked poster from a JSON movie-series manifest. |
 | `--palette` | Show up to six film colors in the poster's barcode area. |
