@@ -39,7 +39,7 @@ def lookup_movie(*, imdb_id: str, api_key: str | None) -> MovieMetadata:
             "OMDb lookup requires an API key; set the OMDB_API_KEY environment variable."
         )
 
-    payload = _request({"i": imdb_id, "plot": "short", "apikey": api_key})
+    payload = _request({"i": imdb_id, "plot": "full", "apikey": api_key})
     if payload.get("Response") != "True":
         raise MetadataLookupError(_api_error(payload))
 

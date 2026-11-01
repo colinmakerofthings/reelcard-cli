@@ -81,6 +81,87 @@ def test_render_poster_draws_barcode_and_optional_metadata() -> None:
     assert len(set(poster.getdata())) > 4
 
 
+def test_render_poster_places_palette_labels_at_bottom_of_swatches() -> None:
+    colors = [(180, 30, 30), (240, 220, 30), (30, 80, 180)]
+    barcode = Image.new("RGB", (len(colors), 4))
+    barcode.putdata(colors * 4)
+
+    poster = render_poster(
+        barcode,
+        title="Film",
+        runtime_seconds=60,
+        palette_colors=colors,
+    )
+    barcode_left = round(DEFAULT_WIDTH * 0.045)
+    barcode_right = round(DEFAULT_WIDTH * 0.955)
+    swatch_width = (barcode_right - barcode_left) // len(colors)
+    barcode_top = round(DEFAULT_HEIGHT * 0.225)
+    barcode_bottom = round(DEFAULT_HEIGHT * 0.895)
+
+    for index, color in enumerate(colors):
+        region = poster.crop(
+            (
+                barcode_left + index * swatch_width,
+                barcode_bottom - 60,
+                barcode_left + (index + 1) * swatch_width,
+                barcode_bottom,
+            )
+        )
+        expected_label = poster_module._palette_label_color(color)
+        assert sum(pixel == expected_label for pixel in region.getdata()) > 10
+        swatch_region = poster.crop(
+            (
+                barcode_left + index * swatch_width,
+                barcode_top,
+                barcode_left + (index + 1) * swatch_width,
+                barcode_bottom - 60,
+            )
+        )
+        assert set(swatch_region.getdata()) == {color}
+
+
+def test_render_svg_places_palette_labels_at_bottom_of_swatches() -> None:
+    colors = [(180, 30, 30), (240, 220, 30), (30, 80, 180)]
+    barcode = Image.new("RGB", (len(colors), 4))
+    barcode.putdata(colors * 4)
+
+    svg = render_svg(
+        barcode,
+        title="Film",
+        runtime_seconds=60,
+        palette_colors=colors,
+    )
+    root = ET.fromstring(svg)
+    namespace = {"svg": "http://www.w3.org/2000/svg"}
+    labels = [
+        element
+        for element in root.findall(".//svg:text", namespace)
+        if element.text in {"#B41E1E", "#F0DC1E", "#1E50B4"}
+    ]
+    swatch_rects = [
+        element
+        for element in root.findall(".//svg:rect", namespace)
+        if element.attrib.get("fill") in {"#b41e1e", "#f0dc1e", "#1e50b4"}
+    ]
+
+    assert [element.text for element in labels] == [
+        "#B41E1E",
+        "#F0DC1E",
+        "#1E50B4",
+    ]
+    assert [element.attrib["fill"] for element in labels] == [
+        "#ffffff",
+        "#000000",
+        "#ffffff",
+    ]
+    assert len(swatch_rects) == 3
+    swatches_bottom = max(
+        int(rect.attrib["y"]) + int(rect.attrib["height"]) for rect in swatch_rects
+    )
+    assert all(int(label.attrib["y"]) < swatches_bottom for label in labels)
+    assert all(int(label.attrib["y"]) > 800 for label in labels)
+
+
 def test_render_poster_fills_missing_metadata_with_clear_placeholders() -> None:
     poster = render_poster(
         _barcode(),
@@ -290,6 +371,34 @@ def test_render_svg_does_not_include_music_credit_section() -> None:
         "of a drug deal gone wrong and over two million dollars in cash near "
         "the Rio Grande."
     )
+
+
+def test_render_svg_keeps_full_plot_that_wraps_to_three_lines() -> None:
+    plot = (
+        "Paul Atreides unites with Chani and the Fremen while on a warpath of "
+        "revenge against the conspirators who destroyed his family. Facing a "
+        "choice between the love of his life and the fate of the known "
+        "universe, he endeavors to prevent a terrible future only he can "
+        "foresee."
+    )
+    svg = render_svg(
+        _barcode(),
+        title="Dune: Part Two",
+        runtime_seconds=10_000,
+        plot=plot,
+        width=1748,
+        height=1240,
+    )
+    root = ET.fromstring(svg)
+    namespace = {"svg": "http://www.w3.org/2000/svg"}
+    text_elements = root.findall(".//svg:text", namespace)
+    plot_elements = [
+        element
+        for element in text_elements
+        if int(element.attrib["y"]) >= round(1240 * 0.895)
+    ]
+
+    assert " ".join(element.text or "" for element in plot_elements) == plot
 
 
 def test_plot_and_footer_text_fit_small_landscape_canvas() -> None:

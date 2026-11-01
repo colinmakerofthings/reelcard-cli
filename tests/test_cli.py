@@ -26,6 +26,8 @@ def test_cli_help_lists_supported_options(capsys: pytest.CaptureFixture[str]) ->
     for option in (
         "--title",
         "--series",
+        "--palette",
+        "--include-black",
         "--year",
         "--director",
         "--writer",
@@ -243,6 +245,158 @@ def test_cli_default_output_uses_sanitized_title_and_preset_size(
     assert render.call_args.kwargs["width"] == DEFAULT_WIDTH
     assert render.call_args.kwargs["height"] == DEFAULT_HEIGHT
     assert save.call_args.args[1] == tmp_path / "My-Film.png"
+
+
+def test_cli_palette_mode_uses_palette_swatches_in_poster_layout(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    input_path = tmp_path / "Film.mp4"
+    input_path.touch()
+    monkeypatch.chdir(tmp_path)
+    metadata = VideoMetadata(60.0, 640, 480, 0)
+    palette = [(255, 0, 0), (0, 255, 0), (0, 0, 255)]
+    barcode = Image.new("RGB", (3, 64))
+    with (
+        patch("reelcard.cli.probe_video", return_value=metadata),
+        patch("reelcard.cli.iter_video_frames", return_value=iter(())),
+        patch("reelcard.cli.make_palette", return_value=palette) as make_palette,
+        patch("reelcard.cli.render_palette", return_value=barcode) as render,
+        patch(
+            "reelcard.cli.render_poster",
+            return_value=Image.new("RGB", (620, 400)),
+        ) as render_poster,
+        patch("reelcard.cli.save_poster") as save,
+    ):
+        assert main(
+            [
+                str(input_path),
+                "--palette",
+                "--include-black",
+                "--width",
+                "620",
+                "--height",
+                "400",
+            ]
+        ) == 0
+
+    assert make_palette.call_args.kwargs["include_black"] is True
+    render.assert_called_once_with(palette, width=3, height=64)
+    render_poster.assert_called_once()
+    assert render_poster.call_args.args[0] is barcode
+    assert render_poster.call_args.kwargs["title"] == "Film"
+    assert render_poster.call_args.kwargs["width"] == 620
+    assert render_poster.call_args.kwargs["height"] == 400
+    save.assert_called_once()
+    assert save.call_args.args[1] == tmp_path / "Film-palette.png"
+
+
+def test_cli_palette_svg_mode_uses_normal_vector_poster_layout(
+    tmp_path: Path,
+) -> None:
+    input_path = tmp_path / "Film.mp4"
+    output_path = tmp_path / "palette.svg"
+    input_path.touch()
+    metadata = VideoMetadata(60.0, 640, 480, 0)
+    palette = [(255, 0, 0), (0, 255, 0)]
+    barcode = Image.new("RGB", (2, 64))
+    with (
+        patch("reelcard.cli.probe_video", return_value=metadata),
+        patch("reelcard.cli.iter_video_frames", return_value=iter(())),
+        patch("reelcard.cli.make_palette", return_value=palette),
+        patch("reelcard.cli.render_palette", return_value=barcode),
+        patch("reelcard.cli.render_svg", return_value="<svg poster/>") as render,
+        patch("reelcard.cli.save_svg") as save,
+    ):
+        assert main(
+            [
+                str(input_path),
+                "--palette",
+                "--format",
+                "svg",
+                "--output",
+                str(output_path),
+                "--width",
+                "620",
+                "--height",
+                "400",
+            ]
+        ) == 0
+
+    render.assert_called_once()
+    assert render.call_args.args[0] is barcode
+    assert render.call_args.kwargs["title"] == "Film"
+    assert render.call_args.kwargs["width"] == 620
+    assert render.call_args.kwargs["height"] == 400
+    save.assert_called_once_with("<svg poster/>", output_path, overwrite=False)
+
+
+def test_cli_palette_mode_includes_imdb_metadata(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    input_path = tmp_path / "Film.mp4"
+    input_path.touch()
+    monkeypatch.setenv("OMDB_API_KEY", "test-key")
+    metadata = VideoMetadata(60.0, 640, 480, 0)
+    movie_metadata = MovieMetadata(
+        title="Matched Film",
+        year=1994,
+        director="A Director",
+        imdb_rating="8.0/10",
+        plot="A plot",
+    )
+    with (
+        patch("reelcard.cli.lookup_movie", return_value=movie_metadata) as lookup,
+        patch("reelcard.cli.probe_video", return_value=metadata),
+        patch("reelcard.cli.iter_video_frames", return_value=iter(())),
+        patch("reelcard.cli.make_palette", return_value=[(20, 40, 60)]),
+        patch("reelcard.cli.render_palette", return_value=Image.new("RGB", (1, 64))),
+        patch("reelcard.cli.render_poster") as render,
+        patch("reelcard.cli.save_poster"),
+    ):
+        assert main([str(input_path), "--palette", "--imdb-id", "tt0000001"]) == 0
+
+    lookup.assert_called_once_with(imdb_id="tt0000001", api_key="test-key")
+    assert render.call_args.kwargs["title"] == "Matched Film"
+    assert render.call_args.kwargs["year"] == 1994
+    assert render.call_args.kwargs["director"] == "A Director"
+    assert render.call_args.kwargs["imdb_rating"] == "8.0/10"
+    assert render.call_args.kwargs["plot"] == "A plot"
+
+
+def test_cli_requires_palette_mode_for_include_black(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    input_path = tmp_path / "Film.mp4"
+    input_path.touch()
+
+    result = main([str(input_path), "--include-black"])
+
+    assert result == 2
+    assert "--include-black requires --palette" in capsys.readouterr().err
+
+
+def test_cli_rejects_palette_mode_for_series(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    first = tmp_path / "first.mp4"
+    second = tmp_path / "second.mp4"
+    first.touch()
+    second.touch()
+    manifest = tmp_path / "series.json"
+    manifest.write_text(
+        '{"movies":[{"path":"first.mp4","year":1980},'
+        '{"path":"second.mp4","year":1990}]}',
+        encoding="utf-8",
+    )
+
+    result = main(["--series", str(manifest), "--palette"])
+
+    assert result == 2
+    assert "--palette cannot be combined with --series" in capsys.readouterr().err
 
 
 def test_cli_renders_series_oldest_first_as_one_stacked_image(

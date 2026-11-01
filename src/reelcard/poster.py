@@ -48,6 +48,7 @@ def render_poster(
     *,
     title: str,
     runtime_seconds: float,
+    palette_colors: list[tuple[int, int, int]] | None = None,
     year: int | None = None,
     director: str | None = None,
     writer: str | None = None,
@@ -69,6 +70,7 @@ def render_poster(
         raise ValueError("barcode must be a non-empty Pillow image")
     if barcode.width > 10_000:
         raise ValueError("barcode must not contain more than 10000 stripes")
+    _validate_palette_colors(palette_colors, barcode.width)
     if not isinstance(title, str) or not title.strip():
         raise ValueError("title must not be empty")
     if year is not None and (
@@ -190,6 +192,14 @@ def render_poster(
         Image.Resampling.NEAREST,
     )
     poster.paste(resized_barcode, barcode_box[:2])
+    if palette_colors is not None:
+        _draw_palette_labels(
+            draw,
+            palette_colors,
+            barcode_box=barcode_box,
+            width=width,
+            height=height,
+        )
 
     if footer.plot_font is not None:
         for line_index, line in enumerate(footer.plot_lines):
@@ -247,6 +257,7 @@ def render_svg(
     *,
     title: str,
     runtime_seconds: float,
+    palette_colors: list[tuple[int, int, int]] | None = None,
     year: int | None = None,
     director: str | None = None,
     writer: str | None = None,
@@ -268,6 +279,7 @@ def render_svg(
         raise ValueError("barcode must be a non-empty Pillow image")
     if barcode.width > 10_000:
         raise ValueError("barcode must not contain more than 10000 stripes")
+    _validate_palette_colors(palette_colors, barcode.width)
     if not isinstance(title, str) or not title.strip():
         raise ValueError("title must not be empty")
     if year is not None and (
@@ -431,6 +443,15 @@ def render_svg(
         f'height="{barcode_box[3] - barcode_box[1]}" '
         f'fill="{_svg_color(run_color)}"/>'
     )
+    if palette_colors is not None:
+        elements.extend(
+            _svg_palette_labels(
+                palette_colors,
+                barcode_box=barcode_box,
+                width=width,
+                height=height,
+            )
+        )
 
     if footer.plot_font is not None:
         for line_index, line in enumerate(footer.plot_lines):
@@ -561,6 +582,107 @@ def stack_svg_documents(
 
 def _svg_color(color: tuple[int, int, int]) -> str:
     return f"#{color[0]:02x}{color[1]:02x}{color[2]:02x}"
+
+
+def _validate_palette_colors(
+    colors: list[tuple[int, int, int]] | None,
+    barcode_width: int,
+) -> None:
+    if colors is None:
+        return
+    if not 1 <= len(colors) <= 6 or len(colors) != barcode_width:
+        raise ValueError("palette colors must match 1-6 barcode swatches")
+    if any(
+        len(color) != 3
+        or any(
+            isinstance(channel, bool)
+            or not isinstance(channel, int)
+            or not 0 <= channel <= 255
+            for channel in color
+        )
+        for color in colors
+    ):
+        raise ValueError("palette colors must be RGB integer triples")
+
+
+def _palette_label_font(
+    colors: list[tuple[int, int, int]],
+    *,
+    barcode_box: tuple[int, int, int, int],
+    width: int,
+) -> ImageFont.FreeTypeFont:
+    swatch_width = (barcode_box[2] - barcode_box[0]) // len(colors)
+    padding = max(4, round(width * 0.008))
+    return _fit_single_line(
+        "#FFFFFF",
+        max_width=swatch_width - 2 * padding,
+        initial_size=max(8, round(width * 0.024)),
+        minimum_size=max(7, round(width * 0.010)),
+        weight=700,
+    )
+
+
+def _draw_palette_labels(
+    draw: ImageDraw.ImageDraw,
+    colors: list[tuple[int, int, int]],
+    *,
+    barcode_box: tuple[int, int, int, int],
+    width: int,
+    height: int,
+) -> None:
+    font = _palette_label_font(colors, barcode_box=barcode_box, width=width)
+    content_width = barcode_box[2] - barcode_box[0]
+    for index, color in enumerate(colors):
+        swatch_left = barcode_box[0] + index * content_width // len(colors)
+        swatch_right = barcode_box[0] + (index + 1) * content_width // len(colors)
+        center_x = (swatch_left + swatch_right) // 2
+        center_y = barcode_box[3] - max(6, round(height * 0.025))
+        label = _svg_color(color).upper()
+        draw.text(
+            (center_x, center_y),
+            label,
+            fill=_palette_label_color(color),
+            font=font,
+            anchor="mm",
+        )
+
+
+def _svg_palette_labels(
+    colors: list[tuple[int, int, int]],
+    *,
+    barcode_box: tuple[int, int, int, int],
+    width: int,
+    height: int,
+) -> list[str]:
+    font = _palette_label_font(colors, barcode_box=barcode_box, width=width)
+    content_width = barcode_box[2] - barcode_box[0]
+    center_y = barcode_box[3] - max(6, round(height * 0.025))
+    labels = []
+    for index, color in enumerate(colors):
+        swatch_left = barcode_box[0] + index * content_width // len(colors)
+        swatch_right = barcode_box[0] + (index + 1) * content_width // len(colors)
+        center_x = (swatch_left + swatch_right) // 2
+        labels.append(
+            f'<text x="{center_x}" y="{center_y}" '
+            f'text-anchor="middle" dominant-baseline="central" '
+            f'font-family="Montserrat" font-size="{font.size}" font-weight="700" '
+            f'fill="{_svg_color(_palette_label_color(color))}">'
+            f"{_svg_color(color).upper()}</text>"
+        )
+    return labels
+
+
+def _palette_label_color(color: tuple[int, int, int]) -> tuple[int, int, int]:
+    linear = [
+        channel / 255 / 12.92
+        if channel / 255 <= 0.04045
+        else ((channel / 255 + 0.055) / 1.055) ** 2.4
+        for channel in color
+    ]
+    luminance = 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+    black_contrast = (luminance + 0.05) / 0.05
+    white_contrast = 1.05 / (luminance + 0.05)
+    return (0, 0, 0) if black_contrast >= white_contrast else (255, 255, 255)
 
 
 def _svg_text(
@@ -702,7 +824,7 @@ def _layout_footer(
         plot_font, plot_lines = _fit_wrapped_text(
             plot,
             max_width=content_width,
-            max_lines=2,
+            max_lines=3,
             initial_size=max(9, round(width * 0.012)),
             minimum_size=max(8, round(width * 0.008)),
             weight=400,

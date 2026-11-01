@@ -21,14 +21,14 @@ Created from one movie file with an IMDb lookup:
 reelcard "Z:\Movies\Blade Runner 2049 [2017].mp4" --imdb-id tt1856101
 ```
 
-### Star Wars trilogy
+### Dune: Part Two
 
-![Combined Reelcard poster for the Star Wars trilogy (1977, 1980, and 1983)](assets/star-wars-trilogy.png)
+![Reelcard poster for Dune: Part Two (2024)](assets/dune-part-two-2024.png)
 
-Created from a JSON series manifest with IMDb lookups for each movie:
+Created from one movie file with an IMDb lookup:
 
 ```console
-reelcard --series examples\star-wars-trilogy.json
+reelcard "Z:\Movies\Dune Part Two [2024].mp4" --imdb-id tt15239678
 ```
 
 ## Requirements
@@ -46,7 +46,7 @@ operating system, then check that both `ffmpeg -version` and
 
 ## Installation
 
-The package is not yet available on PyPI. Install the stable v1.0.0 release
+Install the stable v1.0.0 release
 from source:
 
 ```console
@@ -74,6 +74,7 @@ reelcard "My Film.mp4" --format svg
 reelcard "My Film.mp4" --color-style brighter --force
 reelcard "My Film.mp4" --color-style vivid --force
 reelcard "My Film.mp4" --imdb-id tt0087182
+reelcard "My Film.mp4" --palette
 reelcard --series "my-series.json" --output "my-series.png"
 ```
 
@@ -98,6 +99,8 @@ Run `reelcard --help` for all options:
 | `--credits TEXT` | Optional footer credits. |
 | `--imdb-id ID` | Look up missing metadata for this movie via OMDb; requires an API key. |
 | `--series PATH` | Create one stacked poster from a JSON movie-series manifest. |
+| `--palette` | Show up to six film colors in the poster's barcode area. |
+| `--include-black` | Include near-black colors in palette mode (excluded by default). |
 | `--output PATH` | Output destination; extension must match the selected format. |
 | `--format FORMAT` | Output format: `png` (default) or `svg`. |
 | `--stripes N` | Number of sampled frames/stripes (default 300; maximum 10000). |
@@ -117,6 +120,36 @@ Use `--color-style brighter` for a moderate brightness lift or `--color-style
 vivid` to increase color saturation. The default `natural` style keeps the
 original sampled colors. Use `--force` to replace the same output while
 comparing styles.
+
+### Color-palette posters
+
+Use `--palette` to replace the barcode with up to six horizontal color swatches
+while keeping the normal poster layout, including movie title, year, and any
+available IMDb metadata. Each swatch is labeled with its hexadecimal color
+value, using black or white text for contrast:
+
+```console
+reelcard "My Film.mp4" --palette --imdb-id tt0087182
+reelcard "My Film.mp4" --palette --include-black --imdb-id tt0087182 --format svg
+```
+
+The Blade Runner 2049 example, with its IMDb details and palette colors:
+
+![Blade Runner 2049 palette poster with IMDb metadata](assets/blade-runner-2049-palette.png)
+
+```console
+reelcard "Z:\Movies\Blade Runner 2049 [2017].mp4" --palette --imdb-id tt1856101
+```
+
+Planning a Blade Runner 2049-themed bedroom? You're covered: print the palette,
+pick a wall color, and supply your own neon rain.
+
+Reelcard samples each selected frame as a small color grid, groups the combined
+pixels in CIELAB perceptual color space, and orders the resulting swatches by
+prominence. Near-black pixels (maximum RGB channel 24 or below) are excluded by
+default so dark scenes do not overwhelm the palette. Use `--include-black` when
+dark tones are important to the film. Palette posters support both PNG and SVG;
+the standard barcode poster remains the default.
 
 ### Movie series
 
@@ -141,6 +174,25 @@ up missing metadata and release years through OMDb:
     }
   ]
 }
+```
+
+Example output: the Star Wars trilogy, with each movie in its own chronological
+panel:
+
+![Combined Reelcard poster for the Star Wars trilogy (1977, 1980, and 1983)](assets/star-wars-trilogy.png)
+
+[View the vector SVG version](assets/star-wars-trilogy.svg).
+
+Generate the PNG from the example manifest:
+
+```console
+reelcard --series examples\star-wars-trilogy.json
+```
+
+Or create the vector version:
+
+```console
+reelcard --series examples\star-wars-trilogy.json --format svg --output assets\star-wars-trilogy.svg --force
 ```
 
 Run `reelcard --series "star-wars.json"`. Panels are ordered from oldest to
