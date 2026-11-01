@@ -1,0 +1,16 @@
+{
+  "movies": [
+    {
+      "path": "Z:\\Movies\\Star Wars Episode IV A New Hope [1977].mp4",
+      "imdb_id": "tt0076759"
+    },
+    {
+      "path": "Z:\\Movies\\Star Wars Episode V The Empire Strikes Back [1980].mp4",
+      "imdb_id": "tt0080684"
+    },
+    {
+      "path": "Z:\\Movies\\Star Wars Episode VI Return Of The Jedi [1983].mp4",
+      "imdb_id": "tt0086190"
+    }
+  ]
+}

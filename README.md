@@ -11,13 +11,25 @@ within a carefully typeset poster.
 
 ## Example posters
 
+### Blade Runner 2049
+
+![Reelcard poster for Blade Runner 2049 (2017)](assets/blade-runner-2049-2017.png)
+
+Created from one movie file with an IMDb lookup:
+
+```console
+reelcard "Z:\Movies\Blade Runner 2049 [2017].mp4" --imdb-id tt1856101
+```
+
 ### Star Wars trilogy
 
-![Combined Reelcard posters for the Star Wars trilogy (1977, 1980, and 1983)](assets/star-wars-trilogy-1977-1983.png)
+![Combined Reelcard poster for the Star Wars trilogy (1977, 1980, and 1983)](assets/star-wars-trilogy.png)
 
-### Blade Runner series
+Created from a JSON series manifest with IMDb lookups for each movie:
 
-![Combined Reelcard posters for the Blade Runner series (1982 and 2017)](assets/blade-runner-series-1982-2017.png)
+```console
+reelcard --series examples\star-wars-trilogy.json
+```
 
 ## Requirements
 
@@ -62,6 +74,7 @@ reelcard "My Film.mp4" --format svg
 reelcard "My Film.mp4" --color-style brighter --force
 reelcard "My Film.mp4" --color-style vivid --force
 reelcard "My Film.mp4" --imdb-id tt0087182
+reelcard --series "my-series.json" --output "my-series.png"
 ```
 
 The input filename supplies the title when `--title` is omitted. By default,
@@ -84,6 +97,7 @@ Run `reelcard --help` for all options:
 | `--subtitle TEXT` | Optional subtitle below the barcode. |
 | `--credits TEXT` | Optional footer credits. |
 | `--imdb-id ID` | Look up missing metadata for this movie via OMDb; requires an API key. |
+| `--series PATH` | Create one stacked poster from a JSON movie-series manifest. |
 | `--output PATH` | Output destination; extension must match the selected format. |
 | `--format FORMAT` | Output format: `png` (default) or `svg`. |
 | `--stripes N` | Number of sampled frames/stripes (default 300; maximum 10000). |
@@ -103,6 +117,46 @@ Use `--color-style brighter` for a moderate brightness lift or `--color-style
 vivid` to increase color saturation. The default `natural` style keeps the
 original sampled colors. Use `--force` to replace the same output while
 comparing styles.
+
+### Movie series
+
+Create a JSON manifest with each movie's path and either a release year or an
+IMDb ID. Paths are relative to the manifest file. IMDb IDs let Reelcard look
+up missing metadata and release years through OMDb:
+
+```json
+{
+  "movies": [
+    {
+      "path": "a-new-hope.mp4",
+      "imdb_id": "tt0076759"
+    },
+    {
+      "path": "the-empire-strikes-back.mp4",
+      "imdb_id": "tt0080684"
+    },
+    {
+      "path": "return-of-the-jedi.mp4",
+      "imdb_id": "tt0086190"
+    }
+  ]
+}
+```
+
+Run `reelcard --series "star-wars.json"`. Panels are ordered from oldest to
+newest by year; entries with the same year retain their manifest order. Set
+`OMDB_API_KEY` to enable IMDb lookups. A movie can provide `year` instead of
+`imdb_id`, or provide both to use the manifest year while still looking up
+other metadata. Explicit metadata fields take precedence over OMDb values.
+Supported fields are `title`, `year`, `imdb_id`, `director`, `writer`,
+`starring`, `runtime`, `rating`, `imdb_rating`, `plot`, `subtitle`, and
+`credits`. Titles default to the OMDb title when available, otherwise the video
+filename. If a lookup cannot supply a missing year, Reelcard reports an error
+instead of guessing the series order. `--stripes` and `--color-style` apply to
+each movie. `--width` and `--height` set each panel's dimensions, so the final
+image is stacked vertically. The combined height is limited to 20000 pixels.
+Series mode supports both PNG and SVG; per-movie metadata options on the
+command line should instead be placed in the manifest.
 
 ## Optional metadata lookup
 

@@ -10,9 +10,9 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from reelcard.colors import make_barcode
+from reelcard.colors import ColorStyle, make_barcode
 from reelcard.errors import ReelcardError
-from reelcard.metadata import MetadataLookupError, lookup_movie
+from reelcard.metadata import MetadataLookupError, MovieMetadata, lookup_movie
 from reelcard.poster import (
     DEFAULT_DPI,
     DEFAULT_HEIGHT,
@@ -21,17 +21,32 @@ from reelcard.poster import (
     render_svg,
     save_poster,
     save_svg,
+    stack_posters,
+    stack_svg_documents,
 )
+from reelcard.series import SeriesMovie, load_series_manifest
 from reelcard.video import MAX_STRIPES, iter_video_frames, probe_video
+
+MAX_SERIES_HEIGHT = 20_000
 
 
 def build_parser() -> argparse.ArgumentParser:
     """Build the command-line parser."""
     parser = argparse.ArgumentParser(
         prog="reelcard",
-        description="Create a postcard-sized film barcode poster from a video.",
+        description="Create postcard-sized film barcode poster(s) from local videos.",
     )
-    parser.add_argument("input", type=Path, help="path to a local video file")
+    parser.add_argument(
+        "input",
+        type=Path,
+        nargs="?",
+        help="path to a local video file (omit when using --series)",
+    )
+    parser.add_argument(
+        "--series",
+        type=Path,
+        help="JSON manifest describing multiple movies and their poster metadata",
+    )
     parser.add_argument("--title", help="film title (defaults to the input filename)")
     parser.add_argument("--year", type=_parse_year, help="film release year")
     parser.add_argument("--director", help="director credit")
@@ -101,15 +116,51 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     input_path = args.input
-    title = args.title if args.title is not None else input_path.stem
+    if args.title is not None:
+        title = args.title
+    elif input_path is not None:
+        title = input_path.stem
+    elif args.series is not None:
+        title = args.series.stem
+    else:
+        title = ""
     output_path = args.output or Path.cwd() / f"{_safe_filename(title)}.{args.format}"
 
     try:
+        if (input_path is None) == (args.series is None):
+            raise ValueError("provide one video path or use --series with a manifest")
         if not title.strip():
             raise ValueError("title must not be empty")
         width, height = _resolve_dimensions(args.width, args.height)
         _validate_dpi(args.dpi)
         _validate_stripes(args.stripes)
+        if args.series is not None:
+            _validate_series_options(args)
+            movies = load_series_manifest(args.series)
+            if len(movies) * height > MAX_SERIES_HEIGHT:
+                raise ValueError(
+                    f"combined series height must not exceed {MAX_SERIES_HEIGHT} pixels"
+                )
+            for movie in movies:
+                _validate_input_and_output(
+                    movie.path,
+                    output_path,
+                    output_format=args.format,
+                    overwrite=args.force,
+                )
+            return _generate_series(
+                movies,
+                output_path,
+                output_format=args.format,
+                stripes=args.stripes,
+                color_style=args.color_style,
+                width=width,
+                height=height,
+                dpi=args.dpi,
+                overwrite=args.force,
+            )
+
+        assert input_path is not None
         _validate_input_and_output(
             input_path,
             output_path,
@@ -195,6 +246,127 @@ def _parse_year(value: str) -> int:
     if not 1 <= year <= 9999:
         raise argparse.ArgumentTypeError("year must be between 1 and 9999")
     return year
+
+
+def _validate_series_options(args: argparse.Namespace) -> None:
+    incompatible_options = (
+        "title",
+        "year",
+        "director",
+        "writer",
+        "starring",
+        "runtime",
+        "rating",
+        "imdb_rating",
+        "plot",
+        "subtitle",
+        "credits",
+        "imdb_id",
+    )
+    if any(getattr(args, option) is not None for option in incompatible_options):
+        raise ValueError(
+            "per-movie metadata options cannot be used with --series; "
+            "put metadata in the manifest"
+        )
+
+
+def _generate_series(
+    movies: list[SeriesMovie],
+    output_path: Path,
+    *,
+    output_format: str,
+    stripes: int,
+    color_style: ColorStyle,
+    width: int,
+    height: int,
+    dpi: float,
+    overwrite: bool,
+) -> int:
+    resolved_movies: list[tuple[int, SeriesMovie, MovieMetadata | None, str]] = []
+    for movie in movies:
+        movie_metadata = None
+        if movie.imdb_id:
+            try:
+                movie_metadata = lookup_movie(
+                    imdb_id=movie.imdb_id,
+                    api_key=os.environ.get("OMDB_API_KEY"),
+                )
+            except MetadataLookupError as exc:
+                print(
+                    f"reelcard: warning: OMDb lookup failed for {movie.path}: "
+                    f"{exc} Continuing with manifest values.",
+                    file=sys.stderr,
+                )
+
+        year = movie.year or (movie_metadata.year if movie_metadata else None)
+        if year is None:
+            raise ValueError(
+                f"could not determine the release year for {movie.path}; "
+                "add 'year' to the manifest or provide a working 'imdb_id' lookup"
+            )
+        title = (
+            movie.title
+            or (movie_metadata.title if movie_metadata else None)
+            or movie.path.stem
+        )
+        resolved_movies.append((year, movie, movie_metadata, title))
+
+    resolved_movies.sort(key=lambda item: item[0])
+    posters = []
+    svg_documents = []
+    for index, (year, movie, movie_metadata, title) in enumerate(
+        resolved_movies,
+        start=1,
+    ):
+        print(f"Analyzing {movie.path} ({index}/{len(movies)})...", file=sys.stderr)
+        metadata = probe_video(movie.path)
+        print(f"Sampling {stripes} frames...", file=sys.stderr)
+        barcode = make_barcode(
+            iter_video_frames(movie.path, stripes, metadata=metadata),
+            color_style=color_style,
+        )
+        render_options = {
+            "title": title,
+            "runtime_seconds": metadata.duration,
+            "year": year,
+            "director": movie.director
+            or (movie_metadata.director if movie_metadata else None),
+            "writer": movie.writer
+            or (movie_metadata.writer if movie_metadata else None),
+            "starring": movie.starring
+            or (movie_metadata.starring if movie_metadata else None),
+            "runtime": movie.runtime
+            or (movie_metadata.runtime if movie_metadata else None),
+            "rating": movie.rating
+            or (movie_metadata.rating if movie_metadata else None),
+            "imdb_rating": movie.imdb_rating
+            or (movie_metadata.imdb_rating if movie_metadata else None),
+            "plot": movie.plot or (movie_metadata.plot if movie_metadata else None),
+            "subtitle": movie.subtitle,
+            "credits": movie.credits,
+            "width": width,
+            "height": height,
+            "dpi": dpi,
+        }
+        if output_format == "svg":
+            svg_documents.append(render_svg(barcode, **render_options))
+        else:
+            posters.append(render_poster(barcode, **render_options))
+
+    if output_format == "svg":
+        svg = stack_svg_documents(
+            svg_documents,
+            width=width,
+            panel_height=height,
+            dpi=dpi,
+        )
+        save_svg(svg, output_path, overwrite=overwrite)
+    else:
+        poster = stack_posters(posters)
+        save_poster(poster, output_path, dpi=dpi, overwrite=overwrite)
+
+    print(f"Saved series poster to {output_path}")
+    return 0
 
 
 def _parse_runtime(value: str) -> str:
