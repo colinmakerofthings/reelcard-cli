@@ -505,6 +505,60 @@ def save_svg(
     path.write_text(svg, encoding="utf-8")
 
 
+def stack_posters(posters: list[Image.Image]) -> Image.Image:
+    """Stack same-sized poster panels vertically in their supplied order."""
+    if not posters or any(not isinstance(poster, Image.Image) for poster in posters):
+        raise ValueError("at least one poster image is required")
+    width, panel_height = posters[0].size
+    if width <= 0 or panel_height <= 0 or any(
+        poster.size != (width, panel_height) for poster in posters
+    ):
+        raise ValueError("poster panels must have matching non-empty dimensions")
+    combined = Image.new("RGB", (width, panel_height * len(posters)), PAPER)
+    for index, poster in enumerate(posters):
+        combined.paste(poster.convert("RGB"), (0, panel_height * index))
+    return combined
+
+
+def stack_svg_documents(
+    documents: list[str],
+    *,
+    width: int,
+    panel_height: int,
+    dpi: float = DEFAULT_DPI,
+) -> str:
+    """Stack rendered SVG poster documents while keeping vector content."""
+    _validate_dimensions(width, panel_height)
+    _validate_dpi(dpi)
+    if len(documents) < 2:
+        raise ValueError("at least two SVG poster documents are required")
+
+    total_height = panel_height * len(documents)
+    physical_width = width / dpi * 25.4
+    physical_height = total_height / dpi * 25.4
+    panels: list[str] = []
+    for index, document in enumerate(documents):
+        if not isinstance(document, str) or not document.startswith("<svg "):
+            raise ValueError("each panel must be a rendered SVG document")
+        opening_end = document.find(">")
+        closing_start = document.rfind("</svg>")
+        if opening_end < 0 or closing_start <= opening_end:
+            raise ValueError("each panel must be a complete SVG document")
+        panels.append(
+            f'<svg x="0" y="{index * panel_height}" width="{width}" '
+            f'height="{panel_height}" viewBox="0 0 {width} {panel_height}">'
+            f"{document[opening_end + 1:closing_start]}</svg>"
+        )
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" '
+        f'width="{physical_width:.4f}mm" height="{physical_height:.4f}mm" '
+        f'viewBox="0 0 {width} {total_height}" role="img">'
+        "<title>Movie series</title>"
+        + "".join(panels)
+        + "</svg>"
+    )
+
+
 def _svg_color(color: tuple[int, int, int]) -> str:
     return f"#{color[0]:02x}{color[1]:02x}{color[2]:02x}"
 
