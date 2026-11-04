@@ -21,14 +21,14 @@ Created from one movie file with an IMDb lookup:
 reelcard "Z:\Movies\Blade Runner 2049 [2017].mp4" --imdb-id tt1856101
 ```
 
-### Dune: Part Two
+### The Martian
 
-![Reelcard poster for Dune: Part Two (2024)](assets/dune-part-two-2024.png)
+![Reelcard poster for The Martian (2015)](assets/the-martian-2015.png)
 
 Created from one movie file with an IMDb lookup:
 
 ```console
-reelcard "Z:\Movies\Dune Part Two [2024].mp4" --imdb-id tt15239678
+reelcard "Z:\Movies\The Martian [2015].mp4" --imdb-id tt3659388
 ```
 
 ## Requirements
