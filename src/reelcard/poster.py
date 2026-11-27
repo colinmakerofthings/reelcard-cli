@@ -313,25 +313,10 @@ def render_svg(
 
     title_max_width = round(content_width * 0.75)
     title_initial_size = max(10, round(width * 0.040))
-    title_minimum_size = max(9, round(width * 0.025))
-    try:
-        title_font = _fit_single_line(
-            title_text,
-            max_width=title_max_width,
-            initial_size=title_initial_size,
-            minimum_size=title_minimum_size,
-            weight=700,
-        )
-        title_lines = [title_text]
-    except ValueError:
-        title_font, title_lines = _fit_wrapped_text(
-            title_text,
-            max_width=title_max_width,
-            max_lines=2,
-            initial_size=title_initial_size,
-            minimum_size=title_minimum_size,
-            weight=700,
-        )
+    title_font = _font(title_initial_size, weight=700)
+    title_lines = _wrap_text(title_text, title_font, title_max_width)
+    if title_lines is None or len(title_lines) > 2:
+        raise ValueError("title is too long to fit in its allocated area")
     title_line_height = _line_height(title_font)
     title_top = round(height * 0.055)
     for index, line in enumerate(title_lines):
@@ -888,7 +873,7 @@ def _layout_footer(
         footer_bottom = max(footer_bottom, credits_top + _line_height(credits_font))
     if subtitle_font is not None:
         footer_bottom = max(footer_bottom, subtitle_top + _line_height(subtitle_font))
-    shift = max(0, footer_bottom - round(height * 0.98))
+    shift = max(0, footer_bottom - round(height * 0.945))
     barcode_bottom = round(height * 0.895) - shift
     if barcode_top >= barcode_bottom:
         raise ValueError("title and metadata leave no room for the barcode")

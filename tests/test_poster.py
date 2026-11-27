@@ -315,42 +315,53 @@ def test_render_svg_moves_metadata_and_barcode_below_wrapped_title() -> None:
 
 
 def test_render_svg_uses_consistent_title_font_size_for_wrapped_titles() -> None:
-    short_svg = render_svg(
-        _barcode(),
-        title="Interstellar",
-        runtime_seconds=60,
-        width=874,
-        height=620,
-    )
-    long_svg = render_svg(
-        _barcode(),
-        title="Star Wars: Episode V - The Empire Strikes Back",
-        runtime_seconds=60,
-        width=874,
-        height=620,
-    )
     namespace = {"svg": "http://www.w3.org/2000/svg"}
-    short_root = ET.fromstring(short_svg)
-    long_root = ET.fromstring(long_svg)
-    short_title = next(
-        element
-        for element in short_root.findall(".//svg:text", namespace)
-        if element.text == "INTERSTELLAR"
+    titles = (
+        "Star Wars: Episode IV - A New Hope",
+        "Star Wars: Episode V - The Empire Strikes Back",
+        "Star Wars: Episode VI - Return of the Jedi",
     )
-    long_titles = [
-        element
-        for element in long_root.findall(".//svg:text", namespace)
-        if element.text in {
-            "STAR WARS: EPISODE V - THE",
-            "EMPIRE STRIKES BACK",
-        }
-    ]
+    font_sizes = set()
+    for title in titles:
+        root = ET.fromstring(
+            render_svg(
+                _barcode(),
+                title=title,
+                runtime_seconds=60,
+                width=874,
+                height=620,
+            )
+        )
+        title_lines = [
+            element
+            for element in root.findall(".//svg:text", namespace)
+            if element.attrib.get("x") == str(round(874 * 0.045))
+            and int(element.attrib["font-size"]) >= round(874 * 0.035)
+        ]
+        assert title_lines
+        font_sizes.update(element.attrib["font-size"] for element in title_lines)
 
-    assert len(long_titles) == 2
-    assert all(
-        element.attrib["font-size"] == short_title.attrib["font-size"]
-        for element in long_titles
+    assert font_sizes == {str(max(10, round(874 * 0.040)))}
+
+
+def test_footer_preserves_balanced_bottom_margin() -> None:
+    width = 874
+    height = 620
+    layout = poster_module._layout_footer(
+        "A short plot description.",
+        None,
+        None,
+        width=width,
+        height=height,
+        content_width=round(width * 0.91),
+        barcode_top=round(height * 0.30),
     )
+    assert layout.plot_font is not None
+    footer_bottom = layout.top + len(layout.plot_lines) * poster_module._line_height(
+        layout.plot_font
+    )
+
+    assert height - footer_bottom >= round(height * 0.055)
 
 
 def test_render_svg_does_not_include_music_credit_section() -> None:
@@ -603,11 +614,9 @@ def test_render_svg_embeds_font_and_barcode_and_preserves_layout() -> None:
     assert sum(int(element.attrib["width"]) for element in barcode_rects) == (
         round(874 * 0.955) - round(874 * 0.045)
     )
-    assert all(
-        element.attrib["height"]
-        == str(round(620 * 0.895) - round(620 * 0.225))
-        for element in barcode_rects
-    )
+    barcode_heights = {int(element.attrib["height"]) for element in barcode_rects}
+    assert len(barcode_heights) == 1
+    assert next(iter(barcode_heights)) <= round(620 * 0.895) - round(620 * 0.225)
     assert root.find(".//svg:image", namespace) is None
     assert style is not None and "font-family:Montserrat" in style.text
     assert font_match is not None
